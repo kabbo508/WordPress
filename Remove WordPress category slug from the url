@@ -1,0 +1,8 @@
+This code will remove your category slug permalink from your website like: example.com/category/category-name to example.com/category-name.
+You can add thsi code at the theme child function.php file or you can use wp code plugin and go to add new snippet and select php snippet and paste this code.
+
+function custom_remove_category_base($category_link) {
+    $category_link = str_replace('/category/', '/', $category_link);
+    return $category_link;
+}
+add_filter('category_link', 'custom_remove_category_base');
