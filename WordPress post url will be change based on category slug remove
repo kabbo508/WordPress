@@ -1,0 +1,15 @@
+This code will remove your category slug permalink from your website like: example.com/category/category-name/post-name to example.com/category-name/post-name.
+NOTE: For the above URL structure you need to add this snippet: https://github.com/kabbo508/WordPress/blob/1b05b200e39dd926acb9b124ffb953a99652e908/Remove%20WordPress%20category%20slug%20from%20the%20url
+You can add this code to the theme child function.php file or use the wp code plugin and go to add a new snippet, then select php snippet and paste this code.
+
+function custom_change_post_permalink($permalink, $post, $leavename) {
+    if (in_array($post->post_type, array('post')) && !empty($permalink) && (strpos($permalink, '%category%') !== false)) {
+        $terms = wp_get_object_terms($post->ID, 'category');
+        if ($terms) {
+            $taxonomy_slug = $terms[0]->slug;
+            $permalink = str_replace('%category%', $taxonomy_slug, $permalink);
+        }
+    }
+    return $permalink;
+}
+add_filter('post_link', 'custom_change_post_permalink', 10, 3);
