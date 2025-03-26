@@ -1,0 +1,242 @@
+<?php
+/**
+ * Plugin Name: Multiple UPC Repeater Field & Locations for Products
+ * Description: Adds a repeater field for multiple UPC codes (with stock level and location taxonomy) in the product inventory tab and displays them in the admin products list column and in admin order emails.
+ * Version: 1.5
+ * Author: Sumon Rahman Kabbo
+ * Author URI: https://sumonrahmankabbo.com
+ * Plugin URI: https://sumonrahmankabbo.com
+ * Text Domain: product-upc
+ */
+
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
+/*--------------------------------------------------------------
+1. Register "Locations" Taxonomy for Products
+--------------------------------------------------------------*/
+function create_product_locations_taxonomy() {
+    $labels = array(
+        'name'              => _x( 'Locations', 'taxonomy general name', 'product-upc' ),
+        'singular_name'     => _x( 'Location', 'taxonomy singular name', 'product-upc' ),
+        'search_items'      => __( 'Search Locations', 'product-upc' ),
+        'all_items'         => __( 'All Locations', 'product-upc' ),
+        'parent_item'       => __( 'Parent Location', 'product-upc' ),
+        'parent_item_colon' => __( 'Parent Location:', 'product-upc' ),
+        'edit_item'         => __( 'Edit Location', 'product-upc' ),
+        'update_item'       => __( 'Update Location', 'product-upc' ),
+        'add_new_item'      => __( 'Add New Location', 'product-upc' ),
+        'new_item_name'     => __( 'New Location Name', 'product-upc' ),
+        'menu_name'         => __( 'Locations', 'product-upc' ),
+    );
+    $args = array(
+        'hierarchical'      => true,
+        'labels'            => $labels,
+        'show_ui'           => true,
+        'show_admin_column' => true,
+        'query_var'         => true,
+        'rewrite'           => array( 'slug' => 'location' ),
+    );
+    register_taxonomy( 'location', array( 'product' ), $args );
+}
+add_action( 'init', 'create_product_locations_taxonomy', 0 );
+
+/*--------------------------------------------------------------
+2. Add Repeater Field for Multiple UPCs in the Inventory Tab
+--------------------------------------------------------------*/
+function add_multiple_upcs_repeater_field() {
+    global $post;
+    $multiple_upcs = get_post_meta( $post->ID, '_multiple_upcs', true );
+    if ( ! is_array( $multiple_upcs ) ) {
+        $multiple_upcs = array();
+    }
+    ?>
+    <div class="options_group">
+        <p class="form-field"><label><?php _e( 'Multiple UPCs', 'product-upc' ); ?></label></p>
+        <table id="multiple_upcs_table" style="width:100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th><?php _e( 'UPC Code', 'product-upc' ); ?></th>
+                    <th><?php _e( 'Stock Level', 'product-upc' ); ?></th>
+                    <th><?php _e( 'Location', 'product-upc' ); ?></th>
+                    <th><?php _e( 'Actions', 'product-upc' ); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ( ! empty( $multiple_upcs ) ) : ?>
+                    <?php foreach ( $multiple_upcs as $index => $upc_data ) : ?>
+                        <tr>
+                            <td>
+                                <input type="text" name="multiple_upcs[<?php echo $index; ?>][upc]" value="<?php echo esc_attr( $upc_data['upc'] ); ?>" />
+                            </td>
+                            <td>
+                                <input type="number" name="multiple_upcs[<?php echo $index; ?>][stock]" value="<?php echo esc_attr( $upc_data['stock'] ); ?>" />
+                            </td>
+                            <td>
+                                <select name="multiple_upcs[<?php echo $index; ?>][location]">
+                                    <?php 
+                                    $locations = get_terms( array(
+                                        'taxonomy'   => 'location',
+                                        'hide_empty' => false,
+                                    ) );
+                                    if ( ! empty( $locations ) && ! is_wp_error( $locations ) ) {
+                                        foreach ( $locations as $location ) {
+                                            printf(
+                                                '<option value="%s" %s>%s</option>',
+                                                esc_attr( $location->term_id ),
+                                                selected( $upc_data['location'], $location->term_id, false ),
+                                                esc_html( $location->name )
+                                            );
+                                        }
+                                    }
+                                    ?>
+                                </select>
+                            </td>
+                            <td>
+                                <a class="button remove_upc_row" href="#"><?php _e( 'Remove', 'product-upc' ); ?></a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+        <p>
+            <a id="add_upc_row" class="button" href="#"><?php _e( 'Add UPC', 'product-upc' ); ?></a>
+        </p>
+    </div>
+    <script type="text/javascript">
+    jQuery(document).ready(function($){
+        var rowTemplate = '<tr>'+
+            '<td><input type="text" name="multiple_upcs[{index}][upc]" value="" /></td>'+
+            '<td><input type="number" name="multiple_upcs[{index}][stock]" value="" /></td>'+
+            '<td>'+
+                '<select name="multiple_upcs[{index}][location]">'+
+                    '<?php 
+                    $locations = get_terms( array(
+                        'taxonomy'   => 'location',
+                        'hide_empty' => false,
+                    ) );
+                    $options = '';
+                    if ( ! empty( $locations ) && ! is_wp_error( $locations ) ) {
+                        foreach ( $locations as $location ) {
+                            $options .= '<option value="' . esc_attr( $location->term_id ) . '">' . esc_html( $location->name ) . '</option>';
+                        }
+                    }
+                    echo $options;
+                    ?>'+
+                '</select>'+
+            '</td>'+
+            '<td><a class="button remove_upc_row" href="#"><?php _e( 'Remove', 'product-upc' ); ?></a></td>'+
+        '</tr>';
+        var counter = <?php echo count( $multiple_upcs ); ?>;
+        $('#add_upc_row').on('click', function(e){
+            e.preventDefault();
+            var newRow = rowTemplate.replace(/{index}/g, counter);
+            $('#multiple_upcs_table tbody').append(newRow);
+            counter++;
+        });
+        $(document).on('click', '.remove_upc_row', function(e){
+            e.preventDefault();
+            $(this).closest('tr').remove();
+        });
+    });
+    </script>
+    <?php
+}
+add_action( 'woocommerce_product_options_inventory_product_data', 'add_multiple_upcs_repeater_field' );
+
+/*--------------------------------------------------------------
+3. Save the Repeater Field Data
+--------------------------------------------------------------*/
+function save_multiple_upcs_field( $post_id ) {
+    if ( isset( $_POST['multiple_upcs'] ) ) {
+        $upcs = array();
+        foreach ( $_POST['multiple_upcs'] as $upc_entry ) {
+            if ( ! empty( $upc_entry['upc'] ) ) {
+                $upcs[] = array(
+                    'upc'      => sanitize_text_field( $upc_entry['upc'] ),
+                    'stock'    => isset( $upc_entry['stock'] ) ? intval( $upc_entry['stock'] ) : 0,
+                    'location' => isset( $upc_entry['location'] ) ? sanitize_text_field( $upc_entry['location'] ) : '',
+                );
+            }
+        }
+        update_post_meta( $post_id, '_multiple_upcs', $upcs );
+    } else {
+        delete_post_meta( $post_id, '_multiple_upcs' );
+    }
+}
+add_action( 'woocommerce_process_product_meta', 'save_multiple_upcs_field' );
+
+/*--------------------------------------------------------------
+4. (Removed Display on Single Product Page)
+--------------------------------------------------------------*/
+// The display of multiple UPCs on the single product page has been removed per your request.
+
+/*--------------------------------------------------------------
+5. Add a New Column in the Admin Products List to Display UPC Codes
+--------------------------------------------------------------*/
+function add_product_upc_column( $columns ) {
+    $new_columns = array();
+    foreach ( $columns as $key => $column ) {
+        $new_columns[ $key ] = $column;
+        // Insert the UPC Codes column after the SKU column.
+        if ( 'sku' === $key ) {
+            $new_columns['upc_codes'] = __( 'UPC Codes', 'product-upc' );
+        }
+    }
+    return $new_columns;
+}
+add_filter( 'manage_edit-product_columns', 'add_product_upc_column', 15 );
+
+function show_product_upc_column( $column, $post_id ) {
+    if ( 'upc_codes' === $column ) {
+        $multiple_upcs = get_post_meta( $post_id, '_multiple_upcs', true );
+        if ( ! empty( $multiple_upcs ) && is_array( $multiple_upcs ) ) {
+            $codes = array();
+            foreach ( $multiple_upcs as $upc_data ) {
+                if ( ! empty( $upc_data['upc'] ) ) {
+                    $codes[] = esc_html( $upc_data['upc'] );
+                }
+            }
+            echo ! empty( $codes ) ? implode( ', ', $codes ) : '-';
+        } else {
+            echo '-';
+        }
+    }
+}
+add_action( 'manage_product_posts_custom_column', 'show_product_upc_column', 10, 2 );
+
+/*--------------------------------------------------------------
+6. Display Multiple UPCs in the Admin Email Template for Orders
+--------------------------------------------------------------*/
+function display_multiple_upcs_in_admin_email( $order, $sent_to_admin, $plain_text, $email ) {
+    // Only add UPC details for admin emails.
+    if ( ! $sent_to_admin ) {
+        return;
+    }
+    echo '<h4>' . __( 'Product UPCs', 'product-upc' ) . '</h4>';
+    foreach ( $order->get_items() as $item_id => $item ) {
+        $product = $item->get_product();
+        if ( $product ) {
+            $multiple_upcs = get_post_meta( $product->get_id(), '_multiple_upcs', true );
+            if ( ! empty( $multiple_upcs ) && is_array( $multiple_upcs ) ) {
+                echo '<p><strong>' . $product->get_name() . '</strong></p>';
+                echo '<table style="width:100%; border-collapse: collapse;">';
+                echo '<tr><th>' . __( 'UPC', 'product-upc' ) . '</th><th>' . __( 'Stock', 'product-upc' ) . '</th><th>' . __( 'Location', 'product-upc' ) . '</th></tr>';
+                foreach ( $multiple_upcs as $upc_data ) {
+                    $location_term = get_term( $upc_data['location'], 'location' );
+                    $location_name = $location_term && ! is_wp_error( $location_term ) ? $location_term->name : '';
+                    echo '<tr>';
+                    echo '<td>' . esc_html( $upc_data['upc'] ) . '</td>';
+                    echo '<td>' . esc_html( $upc_data['stock'] ) . '</td>';
+                    echo '<td>' . esc_html( $location_name ) . '</td>';
+                    echo '</tr>';
+                }
+                echo '</table>';
+            }
+        }
+    }
+}
+add_action( 'woocommerce_email_after_order_table', 'display_multiple_upcs_in_admin_email', 10, 4 );
